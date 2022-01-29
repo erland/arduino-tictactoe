@@ -20,6 +20,7 @@ Adafruit_8x16matrix matrix = Adafruit_8x16matrix();
 
 noDelay ledBlinkRate(1000);
 noDelay boardScanRate(500);
+noDelay resetTimer(5000);
 
 void setup() {
   Serial.begin(9600);
@@ -66,6 +67,15 @@ void drawReadySignal() {
   drawBlinkPixel(1,1,100);
 }
 
+void drawWinningPos(const int positions[3]) {
+  matrix.clear();
+  for(int i=0;i<3;i++) {
+    int y = positions[i]/3;
+    int x = positions[i]%3;
+    drawBlinkPixel(x,y,75);
+  }
+}
+
 void drawBlinkPixel(int x, int y, int rate) {
   drawPixel(x,y,1);
   matrix.writeDisplay();
@@ -76,18 +86,41 @@ void drawBlinkPixel(int x, int y, int rate) {
 }
 
 bool isOdd = true;
+bool prepareForReset = false;
 
 void loop() {
   if(boardScanRate.update()) {
     scanBoard();
   }
-  if(ledBlinkRate.update()) {
-    if(isOdd) {
-      printBoard(true);
+  if(resetTimer.update()) {
+    if(prepareForReset && isBoardEmpty()) {
+      Serial.println("Resetting, ready for game");
+      prepareForReset = false;
+      drawReadySignal();
+    }else if(isBoardEmpty()) {
+      Serial.println("Board empty, preparing for reset");
+      prepareForReset = true;
     }else {
-      printBoard(false);
+      prepareForReset = false;
     }
-    isOdd = !isOdd;
+  }
+  const int *winningPos = isWinner(markers, RING);
+  if(winningPos != NULL) {
+    drawWinningPos(winningPos);
+  }else {
+    winningPos = isWinner(markers, CROSS);
+    if(winningPos != NULL) {
+      drawWinningPos(winningPos);
+    }else {
+      if(ledBlinkRate.update()) {
+        if(isOdd) {
+          printBoard(true);
+        }else {
+          printBoard(false);
+        }
+        isOdd = !isOdd;
+      }
+    }
   }
 }
 
@@ -129,6 +162,60 @@ void printBoard(bool skipRing) {
   matrix.writeDisplay();
   //Serial.println("**********************");
 
+}
+
+int availablePositions(int positionBuffer[9]) {
+  int nextFree = 0;
+  for(int i=0;i<9;i++) {
+    if(markers[i] == EMPTY) {
+      positionBuffer[nextFree++] = i;
+    }
+  }
+  return nextFree;
+}
+
+const int winningPositions[][3] = {
+  {0,1,2},
+  {3,4,5},
+  {6,7,8},
+  {0,3,6},
+  {1,4,7},
+  {2,5,8},
+  {0,4,8},
+  {2,4,6}
+};
+
+const int* isWinner(char *board, char markerType) {
+  for(int i=0;i<8;i++) {
+    int matching = 0;
+    for(int pos=0;pos<3;pos++) {
+      if(board[winningPositions[i][pos]]==markerType) {
+        matching++;
+      }
+    }
+    if(matching==3) {
+      Serial.print("Winner(");
+      Serial.print(markerType);
+      Serial.print(") at: ");
+      Serial.print(winningPositions[i][0]);
+      Serial.print(",");
+      Serial.print(winningPositions[i][1]);
+      Serial.print(",");
+      Serial.print(winningPositions[i][2]);
+      Serial.println("");
+      return winningPositions[i];
+    }
+  }
+  return NULL;
+}
+
+bool isBoardEmpty() {
+  for(int i=0;i<9;i++) {
+    if(markers[i]!=EMPTY) {
+      return false;
+    }
+  }
+  return true;
 }
 
 char getMarker(int x, int y) {
