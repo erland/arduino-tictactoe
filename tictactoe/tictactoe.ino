@@ -87,6 +87,15 @@ void drawBlinkPixel(int x, int y, int rate) {
 
 bool isOdd = true;
 bool prepareForReset = false;
+char nextMarkerType = ' ';
+enum GameType {
+  NotStarted,
+  Human2Human,
+  Human2Computer
+};
+enum GameType gameType = NotStarted;
+bool computerTurn = false;
+int waitingForComputerMarker = -1;
 
 void loop() {
   if(boardScanRate.update()) {
@@ -96,6 +105,7 @@ void loop() {
     if(prepareForReset && isBoardEmpty()) {
       Serial.println("Resetting, ready for game");
       prepareForReset = false;
+      gameType = NotStarted;
       drawReadySignal();
     }else if(isBoardEmpty()) {
       Serial.println("Board empty, preparing for reset");
@@ -104,6 +114,39 @@ void loop() {
       prepareForReset = false;
     }
   }
+  if(gameType == NotStarted) {
+    if(isNewGameStarted(CROSS)) {
+      Serial.println("Human to computer game started");
+      gameType = Human2Computer;
+      computerTurn = true;
+    }else if(isNewGameStarted(RING)) {
+      gameType = Human2Human;
+      nextMarkerType = CROSS;
+    }
+  }
+  
+  if(gameType == Human2Computer) {
+    if(computerTurn && waitingForComputerMarker<0) {
+      calculateAndPlaceComputerMarker();
+      Serial.print("Selecting computer position (");
+      Serial.print(waitingForComputerMarker%3);
+      Serial.print(",");
+      Serial.print(waitingForComputerMarker/3);
+      Serial.println(") waiting for placement");
+    }else if(computerTurn) {
+      if(getMarker(waitingForComputerMarker%3, waitingForComputerMarker/3) == RING) {
+        Serial.println("Computer marker placed, your turn");
+        waitingForComputerMarker = -1;
+        computerTurn = false;
+      }
+    }else {
+      if(markerCount(CROSS)>markerCount(RING)) {
+        Serial.println("Your marker registered, waiting for computer");
+        computerTurn = true;
+      }
+    }
+  }
+
   const int *winningPos = isWinner(markers, RING);
   if(winningPos != NULL) {
     drawWinningPos(winningPos);
@@ -113,16 +156,69 @@ void loop() {
       drawWinningPos(winningPos);
     }else {
       if(ledBlinkRate.update()) {
-        if(isOdd) {
-          printBoard(true);
+        if(gameType == Human2Computer && waitingForComputerMarker>=0) {
+            matrix.clear(); 
+            if(isOdd) {
+              drawPixel(waitingForComputerMarker%3, waitingForComputerMarker/3, 1);
+            }
+            matrix.writeDisplay();
         }else {
-          printBoard(false);
+          if(isOdd) {
+            printBoard(true);
+          }else {
+            printBoard(false);
+          }
         }
         isOdd = !isOdd;
       }
     }
   }
 }
+
+bool isNewGameStarted(char markerType) {
+  return markerCount(EMPTY)==8 && markerCount(markerType)==1;
+}
+
+void calculateAndPlaceComputerMarker() {
+  // Check if we can win
+  char tempBoard[9];
+  for(int i=0;i<9;i++) {
+    if(getMarker(i%3,i/3)==EMPTY) {
+      memcpy(tempBoard, markers, sizeof(char)*9);
+      tempBoard[i] = RING;
+      if(isWinner(tempBoard, RING) != NULL) {
+        waitingForComputerMarker = i;
+        break;
+      }
+    }
+  }
+  if(waitingForComputerMarker<0) {
+    // Check if opponent can win
+    char tempBoard[9];
+    for(int i=0;i<9;i++) {
+      if(getMarker(i%3,i/3)==EMPTY) {
+        memcpy(tempBoard, markers, sizeof(char)*9);
+        tempBoard[i] = CROSS;
+        if(isWinner(tempBoard, CROSS) != NULL) {
+          waitingForComputerMarker = i;
+          break;
+        }
+      }
+    }
+  }
+  if(waitingForComputerMarker<0) {
+    // Take best available move
+    int bestMoves[9] = {4,0,2,6,8,1,3,5,7};
+    for(int i=0;i<9;i++) {
+      int pos = bestMoves[i];
+      if(getMarker(pos%3,pos/3)==EMPTY) {
+        waitingForComputerMarker = pos;
+        break;
+      }
+    }
+  }
+}
+
 
 void scanBoard() {
   for ( int y=0;y<3;y++) {
@@ -224,6 +320,16 @@ char getMarker(int x, int y) {
 
 int setMarker(int x, int y, char value) {
   markers[y*3+x] = value;
+}
+
+int markerCount(char markerType) {
+  int count = 0;
+  for(int i=0;i<9;i++) {
+    if(markers[i] == markerType) {
+      count++;
+    }
+  }
+  return count;
 }
 
 void drawPixel(int x, int y, int value) {
