@@ -96,6 +96,8 @@ enum GameType {
 enum GameType gameType = NotStarted;
 bool computerTurn = false;
 int waitingForComputerMarker = -1;
+int lastPlaced = -1;
+int lastPlacedIndicator = 0;
 
 void loop() {
   if(boardScanRate.update()) {
@@ -140,7 +142,7 @@ void loop() {
         computerTurn = false;
       }
     }else {
-      if(markerCount(CROSS)>markerCount(RING)) {
+      if(markerCount(CROSS)>markerCount(RING) && markerCount(EMPTY)>0) {
         Serial.println("Your marker registered, waiting for computer");
         computerTurn = true;
       }
@@ -155,20 +157,24 @@ void loop() {
     if(winningPos != NULL) {
       drawWinningPos(winningPos);
     }else {
+      if(lastPlaced >= 0 && lastPlacedIndicator == 0 && (waitingForComputerMarker>=0 || gameType == Human2Human)) {
+        lastPlacedIndicator = 1;
+      }
       if(ledBlinkRate.update()) {
-        if(gameType == Human2Computer && waitingForComputerMarker>=0) {
-            matrix.clear(); 
+        matrix.clear(); 
+        if(gameType == Human2Computer && waitingForComputerMarker>=0 && lastPlacedIndicator==0) {
             if(isOdd) {
               drawPixel(waitingForComputerMarker%3, waitingForComputerMarker/3, 1);
             }
-            matrix.writeDisplay();
-        }else {
-          if(isOdd) {
-            printBoard(true);
-          }else {
-            printBoard(false);
-          }
         }
+        if(lastPlacedIndicator>0) {
+            drawPixel(lastPlaced%3, lastPlaced/3, 1);
+            lastPlacedIndicator--;
+            if(lastPlacedIndicator==0) {
+              lastPlaced = -1;
+            }
+        }
+        matrix.writeDisplay();
         isOdd = !isOdd;
       }
     }
@@ -319,6 +325,17 @@ char getMarker(int x, int y) {
 }
 
 int setMarker(int x, int y, char value) {
+  if(markers[y*3+x] == EMPTY && value != EMPTY) {
+    if(lastPlaced != y*3+x) {
+      Serial.print("Placed ");
+      Serial.print(value);
+      Serial.print(" at ");
+      Serial.print(x);
+      Serial.print(",");
+      Serial.println(y);
+      lastPlaced = y*3+x;
+    }
+  }
   markers[y*3+x] = value;
 }
 
