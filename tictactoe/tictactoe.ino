@@ -8,6 +8,7 @@ int s1 = 4;
 int s2 = 5;
 int s3 = 6;
 int sig = A0;
+int buttonPin = 9;
 
 #define EMPTY ' '
 #define RING 'O'
@@ -31,6 +32,7 @@ void setup() {
   pinMode(s1, OUTPUT);
   pinMode(s2, OUTPUT);
   pinMode(s3, OUTPUT);
+  pinMode(buttonPin, INPUT);
 
   digitalWrite(s0, LOW);
   digitalWrite(s1, LOW);
@@ -98,8 +100,30 @@ bool computerTurn = false;
 int waitingForComputerMarker = -1;
 int lastPlaced = -1;
 int lastPlacedIndicator = 0;
+bool buttonPressed = false;
+bool computerStarted = false;
 
 void loop() {
+  if(digitalRead(buttonPin)==HIGH) {
+    if(!buttonPressed) {
+      delay(100); // Debounce delay
+    }
+    buttonPressed = true;
+  }else {
+    if(buttonPressed) {
+      delay(100); // Debounce delay
+      if(gameType == NotStarted) {
+        gameType = Human2Computer;
+        computerTurn = true;
+        computerStarted = true;
+        waitingForComputerMarker = -1;
+      }else if(gameType == Human2Computer && isBoardEmpty()) {
+        gameType = NotStarted;
+        computerTurn = false;
+      }
+    }
+    buttonPressed = false;
+  }
   if(boardScanRate.update()) {
     scanBoard();
   }
@@ -109,7 +133,7 @@ void loop() {
       prepareForReset = false;
       gameType = NotStarted;
       drawReadySignal();
-    }else if(isBoardEmpty()) {
+    }else if(isBoardEmpty() && gameType!=Human2Computer) {
       Serial.println("Board empty, preparing for reset");
       prepareForReset = true;
     }else {
@@ -121,6 +145,8 @@ void loop() {
       Serial.println("Human to computer game started");
       gameType = Human2Computer;
       computerTurn = true;
+      waitingForComputerMarker = -1;
+      computerStarted = false;
     }else if(isNewGameStarted(RING)) {
       gameType = Human2Human;
       nextMarkerType = CROSS;
@@ -143,6 +169,9 @@ void loop() {
       }
     }else {
       if(markerCount(CROSS)>markerCount(RING) && markerCount(EMPTY)>0) {
+        Serial.println("Your marker registered, waiting for computer");
+        computerTurn = true;
+      }else if(computerStarted && markerCount(CROSS)==markerCount(RING)) {
         Serial.println("Your marker registered, waiting for computer");
         computerTurn = true;
       }
